@@ -1,0 +1,300 @@
+---
+title: ERC-8004 Agent Platform
+description: Multi-user Agent Token Platform with blockchain integration
+---
+
+# ERC-8004 Agent Token Platform
+
+OpenClaw now supports blockchain-based agent identity through the ERC-8004 "Trustless Agents" standard. This enables:
+
+- **Wallet Authentication** — Sign in with MetaMask/WalletConnect (SIWE)
+- **Agent NFTs** — Each agent gets a unique ERC-721 identity token
+- **Utility Token** — ERC-20 token for rewards and governance
+- **Reputation System** — On-chain feedback and ratings
+- **Multi-user Platform** — Support for multiple users with wallet-based accounts
+
+## Quick Start
+
+### 1. Enable ERC-8004
+
+Set environment variables:
+
+```bash
+export OPENCLAW_ERC8004_ENABLED=true
+export OPENCLAW_ERC8004_CHAIN_ID=11155111  # Sepolia testnet
+export OPENCLAW_ERC8004_RPC_URL=https://rpc.sepolia.org
+
+# Contract addresses (after deployment)
+export OPENCLAW_ERC8004_AGENT_NFT=0x...
+export OPENCLAW_ERC8004_AGENT_TOKEN=0x...
+export OPENCLAW_ERC8004_REPUTATION=0x...
+
+# Admin address
+export OPENCLAW_ERC8004_DEFAULT_ADMIN=0x...
+```
+
+### 2. Start the Gateway
+
+```bash
+openclaw gateway --port 8080
+```
+
+### 3. Access the API
+
+The ERC-8004 API is available at `/erc8004/*` endpoints.
+
+## Authentication Flow
+
+### 1. Get Nonce
+
+```http
+GET /erc8004/auth/nonce?address=0x1234...
+```
+
+Response:
+```json
+{
+  "nonce": "abc123...",
+  "message": "openclaw.ai wants you to sign in..."
+}
+```
+
+### 2. Sign Message
+
+Use MetaMask or WalletConnect to sign the message.
+
+### 3. Verify Signature
+
+```http
+POST /erc8004/auth/verify
+Content-Type: application/json
+
+{
+  "message": "openclaw.ai wants you to sign in...",
+  "signature": "0x..."
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "user": {
+    "id": "uuid",
+    "address": "0x...",
+    "status": "active"
+  }
+}
+```
+
+## Agent NFT Minting
+
+### Mint an Agent NFT
+
+```http
+POST /erc8004/agents/mint
+Authorization: Session cookie or X-Session-Id header
+Content-Type: application/json
+
+{
+  "agentId": "my-agent-001",
+  "name": "My AI Assistant",
+  "description": "A helpful AI agent",
+  "capabilities": ["chat", "code", "research"]
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "nft": {
+    "tokenId": "1",
+    "owner": "0x...",
+    "agentId": "my-agent-001",
+    "metadata": {
+      "name": "My AI Assistant",
+      "description": "A helpful AI agent",
+      "attributes": [...]
+    },
+    "txHash": "0x..."
+  }
+}
+```
+
+### Get Agent Details
+
+```http
+GET /erc8004/agents/my-agent-001
+```
+
+### List Your Agents
+
+```http
+GET /erc8004/agents?owner=0x...
+```
+
+## Reputation System
+
+### Record Interaction
+
+Before leaving feedback, record an interaction:
+
+```http
+POST /erc8004/reputation/interact
+Content-Type: application/json
+
+{
+  "agentId": "my-agent-001"
+}
+```
+
+### Submit Feedback
+
+```http
+POST /erc8004/reputation/feedback
+Content-Type: application/json
+
+{
+  "agentId": "my-agent-001",
+  "score": 5,
+  "comment": "Excellent assistant!"
+}
+```
+
+### Get Agent Reputation
+
+```http
+GET /erc8004/reputation/my-agent-001
+```
+
+Response:
+```json
+{
+  "agentId": "my-agent-001",
+  "tokenId": "1",
+  "reputation": {
+    "averageScore": 4.5,
+    "totalScore": 45,
+    "reviewCount": 10
+  },
+  "recentFeedback": [...]
+}
+```
+
+## Admin API
+
+Requires admin wallet address to be configured.
+
+### Platform Statistics
+
+```http
+GET /erc8004/admin/stats
+```
+
+### User Management
+
+```http
+GET /erc8004/admin/users?page=1&pageSize=20
+POST /erc8004/admin/users/:userId/suspend
+POST /erc8004/admin/users/:userId/activate
+```
+
+### Reputation Dashboard
+
+```http
+GET /erc8004/admin/reputation
+```
+
+## Smart Contracts
+
+### AgentNFT (ERC-721)
+
+Located at `contracts/AgentNFT.sol`:
+- Mints unique NFTs for each agent
+- Stores agent ID and metadata URI
+- Supports enumeration and URI storage
+
+### AgentToken (ERC-20)
+
+Located at `contracts/AgentToken.sol`:
+- Utility token for the platform
+- Agent rewards system
+- Pausable and burnable
+
+### ReputationRegistry
+
+Located at `contracts/ReputationRegistry.sol`:
+- Stores feedback and ratings
+- Tracks user-agent interactions
+- Calculates reputation scores
+
+## Deployment
+
+### Deploy to Sepolia
+
+1. Install dependencies:
+```bash
+npm install --save-dev hardhat @openzeppelin/contracts
+```
+
+2. Configure Hardhat:
+```javascript
+// hardhat.config.js
+module.exports = {
+  solidity: "0.8.20",
+  networks: {
+    sepolia: {
+      url: process.env.SEPOLIA_RPC_URL,
+      accounts: [process.env.DEPLOYER_PRIVATE_KEY]
+    }
+  }
+};
+```
+
+3. Deploy:
+```bash
+npx hardhat run scripts/deploy.js --network sepolia
+```
+
+4. Update environment variables with deployed addresses.
+
+## Configuration Reference
+
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `OPENCLAW_ERC8004_ENABLED` | Enable ERC-8004 module | `false` |
+| `OPENCLAW_ERC8004_CHAIN_ID` | Ethereum chain ID | `11155111` (Sepolia) |
+| `OPENCLAW_ERC8004_RPC_URL` | JSON-RPC endpoint | Chain default |
+| `OPENCLAW_ERC8004_AGENT_NFT` | AgentNFT contract address | - |
+| `OPENCLAW_ERC8004_AGENT_TOKEN` | AgentToken contract address | - |
+| `OPENCLAW_ERC8004_REPUTATION` | ReputationRegistry address | - |
+| `OPENCLAW_ERC8004_SERVER_KEY` | Server wallet private key (for gasless minting) | - |
+| `OPENCLAW_ERC8004_DEFAULT_ADMIN` | Default admin wallet address | - |
+| `OPENCLAW_METADATA_BASE_URI` | Base URI for NFT metadata | `https://api.openclaw.ai/metadata/agent/` |
+
+## Security Considerations
+
+1. **Private Keys** — Never commit private keys. Use environment variables or secure vaults.
+2. **Admin Access** — Limit admin addresses and audit all admin actions.
+3. **Nonce Management** — Nonces expire after 5 minutes to prevent replay attacks.
+4. **Rate Limiting** — Implement rate limiting on auth endpoints.
+5. **Contract Auditing** — Audit smart contracts before mainnet deployment.
+
+## Troubleshooting
+
+### "ERC-8004 module is disabled"
+
+Set `OPENCLAW_ERC8004_ENABLED=true` in your environment.
+
+### "Contract address is not configured"
+
+Deploy the smart contracts and set the address environment variables.
+
+### "Invalid signature"
+
+Ensure the message being signed matches exactly what was returned from `/auth/nonce`.
+
+### "Must interact with agent before leaving feedback"
+
+Call `/reputation/interact` first to record an interaction with the agent.
