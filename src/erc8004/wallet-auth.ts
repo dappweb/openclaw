@@ -168,13 +168,18 @@ export function verifyAndConsumeNonce(nonce: string, address: Address): boolean 
 
 /**
  * Verify an Ethereum signature
- * Note: This is a simplified version. In production, use viem's verifyMessage.
+ * Note: In production, ensure viem is installed for proper verification.
  */
 export async function verifySignature(
   message: string,
   signature: string,
   expectedAddress: Address,
 ): Promise<boolean> {
+  // Basic signature format validation
+  if (!signature.startsWith("0x") || signature.length !== 132) {
+    return false;
+  }
+
   try {
     // Dynamic import to avoid requiring viem if ERC-8004 is disabled
     // @ts-expect-error - viem may not be installed
@@ -185,22 +190,43 @@ export async function verifySignature(
       signature: signature as `0x${string}`,
     });
     return recoveredAddress;
-  } catch {
-    // Fallback: basic signature format validation
-    if (!signature.startsWith("0x") || signature.length !== 132) {
+  } catch (error) {
+    // If viem is not available, we cannot verify signatures securely
+    // In production, viem MUST be installed
+    const isViemMissing =
+      error instanceof Error &&
+      (error.message.includes("Cannot find module") || error.message.includes("MODULE_NOT_FOUND"));
+
+    if (isViemMissing) {
+      console.error(
+        "[ERC8004] SECURITY WARNING: viem is not installed. " +
+          "Signature verification is disabled. Install viem for production use.",
+      );
+      // Only accept in development mode
+      if (
+        process.env.NODE_ENV === "development" ||
+        process.env.OPENCLAW_ERC8004_DEV_MODE === "true"
+      ) {
+        console.warn("[ERC8004] Development mode: accepting signature without verification");
+        return true;
+      }
       return false;
     }
-    // In development mode without viem, accept valid-looking signatures
-    // This should be removed in production
-    console.warn("[ERC8004] Signature verification skipped (viem not available)");
-    return true;
+
+    console.error("[ERC8004] Signature verification failed:", error);
+    return false;
   }
 }
 
 /**
  * Create an authentication session
+ * Returns both the session and sessionId for storage
  */
-export function createSession(address: Address, userId: string, chainId: ChainId): AuthSession {
+export function createSession(
+  address: Address,
+  userId: string,
+  chainId: ChainId,
+): { session: AuthSession; sessionId: string } {
   const session: AuthSession = {
     address,
     userId,
@@ -211,7 +237,7 @@ export function createSession(address: Address, userId: string, chainId: ChainId
   const sessionId = generateNonce();
   sessionStore.set(sessionId, session);
 
-  return session;
+  return { session, sessionId };
 }
 
 /**
@@ -247,7 +273,7 @@ export async function authenticateWithSiwe(params: {
   signature: string;
   domain: string;
   uri: string;
-}): Promise<{ success: boolean; address?: Address; error?: string }> {
+}): Promise<{ success: boolean; address?: Address; sessionId?: string; error?: string }> {
   // Parse the message
   const parsed = parseSiweMessage(params.message);
   if (!parsed) {

@@ -6,7 +6,6 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
 
 /**
  * @title AgentNFT
@@ -17,15 +16,17 @@ import "@openzeppelin/contracts/utils/Counters.sol";
  * agent identity management.
  */
 contract AgentNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownable, Pausable {
-    using Counters for Counters.Counter;
-
-    Counters.Counter private _tokenIdCounter;
+    // Token ID counter (starts at 1 to avoid confusion with zero)
+    uint256 private _tokenIdCounter = 1;
 
     // Mapping from token ID to agent ID
     mapping(uint256 => string) private _agentIds;
 
-    // Mapping from agent ID to token ID (for reverse lookup)
+    // Mapping from agent ID to token ID (0 means not minted)
     mapping(string => uint256) private _agentIdToToken;
+
+    // Mapping to track if agent ID has been used
+    mapping(string => bool) private _agentIdUsed;
 
     // Base URI for metadata
     string private _baseTokenURI;
@@ -44,7 +45,7 @@ contract AgentNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownable, Pausab
     }
 
     /**
-     * @dev Mint a new Agent NFT
+     * @dev Mint a new Agent NFT (restricted to owner/authorized minters)
      * @param to Address to mint the NFT to
      * @param agentId Unique identifier for the agent
      * @param metadataURI URI for the agent's metadata
@@ -54,18 +55,19 @@ contract AgentNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownable, Pausab
         address to,
         string memory agentId,
         string memory metadataURI
-    ) public whenNotPaused returns (uint256) {
+    ) public onlyOwner whenNotPaused returns (uint256) {
         require(bytes(agentId).length > 0, "Agent ID cannot be empty");
-        require(_agentIdToToken[agentId] == 0 || !_exists(_agentIdToToken[agentId]), "Agent already has an NFT");
+        require(!_agentIdUsed[agentId], "Agent already has an NFT");
 
-        _tokenIdCounter.increment();
-        uint256 tokenId = _tokenIdCounter.current();
+        uint256 tokenId = _tokenIdCounter;
+        _tokenIdCounter++;
 
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, metadataURI);
 
         _agentIds[tokenId] = agentId;
         _agentIdToToken[agentId] = tokenId;
+        _agentIdUsed[agentId] = true;
 
         emit AgentMinted(tokenId, to, agentId);
 
@@ -76,7 +78,7 @@ contract AgentNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownable, Pausab
      * @dev Get the agent ID for a token
      */
     function getAgentId(uint256 tokenId) public view returns (string memory) {
-        require(_exists(tokenId), "Token does not exist");
+        require(_ownerOf(tokenId) != address(0), "Token does not exist");
         return _agentIds[tokenId];
     }
 
@@ -84,8 +86,9 @@ contract AgentNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownable, Pausab
      * @dev Get the token ID for an agent
      */
     function getTokenByAgentId(string memory agentId) public view returns (uint256) {
+        require(_agentIdUsed[agentId], "Agent does not have an NFT");
         uint256 tokenId = _agentIdToToken[agentId];
-        require(tokenId != 0 && _exists(tokenId), "Agent does not have an NFT");
+        require(_ownerOf(tokenId) != address(0), "Token no longer exists");
         return tokenId;
     }
 
@@ -93,7 +96,7 @@ contract AgentNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownable, Pausab
      * @dev Check if a token exists
      */
     function exists(uint256 tokenId) public view returns (bool) {
-        return _exists(tokenId);
+        return _ownerOf(tokenId) != address(0);
     }
 
     /**
@@ -131,10 +134,6 @@ contract AgentNFT is ERC721, ERC721URIStorage, ERC721Enumerable, Ownable, Pausab
 
     function _baseURI() internal view override returns (string memory) {
         return _baseTokenURI;
-    }
-
-    function _exists(uint256 tokenId) internal view returns (bool) {
-        return tokenId > 0 && tokenId <= _tokenIdCounter.current() && _ownerOf(tokenId) != address(0);
     }
 
     function _update(

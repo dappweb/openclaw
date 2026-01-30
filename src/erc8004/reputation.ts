@@ -41,20 +41,30 @@ export async function submitFeedback(params: {
     throw new Error(`Agent NFT not found: ${params.agentTokenId}`);
   }
 
+  // Check if user has already reviewed
+  if (hasUserReviewed(params.fromAddress, params.agentTokenId)) {
+    throw new Error("User has already reviewed this agent");
+  }
+
   // Check if user can leave feedback (has interacted with agent)
   const canFeedback = await canLeaveFeedback(params.fromAddress, params.agentTokenId);
   if (!canFeedback) {
     throw new Error("Must interact with agent before leaving feedback");
   }
 
-  // Create feedback record
+  // Create feedback record with proper 32-byte mock tx hash
+  const mockTxHash = `0x${randomUUID().replace(/-/g, "")}${randomUUID().replace(/-/g, "")}`.slice(
+    0,
+    66,
+  ) as TxHash;
+
   const record: ReputationRecord = {
     agentTokenId: params.agentTokenId,
     fromAddress: params.fromAddress.toLowerCase() as Address,
     score: Math.round(params.score),
-    comment: params.comment?.slice(0, 500), // Limit comment length
+    comment: params.comment?.slice(0, 500), // Limit comment to 500 characters
     timestamp: new Date(),
-    txHash: `0x${randomUUID().replace(/-/g, "")}${"0".repeat(32)}`.slice(0, 66) as TxHash,
+    txHash: mockTxHash,
   };
 
   // Store feedback

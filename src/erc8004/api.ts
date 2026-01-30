@@ -188,8 +188,7 @@ export function createERC8004Router(router: Router): Router {
       }
 
       // Create session (stored for later verification)
-      createSession(result.address, user.id, config.chainId);
-      const sessionId = generateNonce(); // Use as session ID
+      const { sessionId } = createSession(result.address, user.id, config.chainId);
 
       res.cookie(SESSION_COOKIE, sessionId, {
         httpOnly: true,
@@ -401,6 +400,13 @@ export function createERC8004Router(router: Router): Router {
         return;
       }
 
+      // Validate score is a valid number
+      const parsedScore = typeof score === "number" ? score : parseInt(String(score), 10);
+      if (Number.isNaN(parsedScore) || parsedScore < 1 || parsedScore > 5) {
+        res.status(400).json({ error: "Score must be a number between 1 and 5" });
+        return;
+      }
+
       const nft = getNFTByAgentId(agentId);
       if (!nft) {
         res.status(404).json({ error: "Agent NFT not found" });
@@ -410,7 +416,7 @@ export function createERC8004Router(router: Router): Router {
       const record = await submitFeedback({
         agentTokenId: nft.tokenId,
         fromAddress: session.address,
-        score: parseInt(score),
+        score: parsedScore,
         comment,
       });
 

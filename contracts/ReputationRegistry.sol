@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  *
  * Tracks feedback and reputation scores for agents.
  * Only users who have interacted with an agent can leave feedback.
+ * Stores running totals to avoid gas-intensive iterations.
  */
 contract ReputationRegistry is Ownable, Pausable {
     // Feedback structure
@@ -20,6 +21,12 @@ contract ReputationRegistry is Ownable, Pausable {
         uint256 timestamp;
     }
 
+    // Aggregated reputation data
+    struct ReputationData {
+        uint256 totalScore;
+        uint256 feedbackCount;
+    }
+
     // Agent NFT contract address
     address public agentNFTContract;
 
@@ -28,6 +35,9 @@ contract ReputationRegistry is Ownable, Pausable {
 
     // Mapping: agentTokenId => feedback array
     mapping(uint256 => Feedback[]) private _feedbacks;
+
+    // Mapping: agentTokenId => aggregated reputation data
+    mapping(uint256 => ReputationData) private _reputationData;
 
     // Mapping: user => agentTokenId => interaction count
     mapping(address => mapping(uint256 => uint256)) private _interactions;
@@ -65,6 +75,10 @@ contract ReputationRegistry is Ownable, Pausable {
             timestamp: block.timestamp
         }));
 
+        // Update running totals
+        _reputationData[agentTokenId].totalScore += score;
+        _reputationData[agentTokenId].feedbackCount++;
+
         _hasReviewed[msg.sender][agentTokenId] = true;
 
         emit FeedbackSubmitted(agentTokenId, msg.sender, score);
@@ -89,39 +103,26 @@ contract ReputationRegistry is Ownable, Pausable {
     }
 
     /**
-     * @dev Get total feedback count for an agent
+     * @dev Get total feedback count for an agent (O(1))
      */
     function getFeedbackCount(uint256 agentTokenId) public view returns (uint256) {
-        return _feedbacks[agentTokenId].length;
+        return _reputationData[agentTokenId].feedbackCount;
     }
 
     /**
-     * @dev Get average score for an agent (multiplied by 100 for precision)
+     * @dev Get average score for an agent (multiplied by 100 for precision, O(1))
      */
     function getAverageScore(uint256 agentTokenId) public view returns (uint256) {
-        uint256 count = _feedbacks[agentTokenId].length;
-        if (count == 0) return 0;
-
-        uint256 total = 0;
-        for (uint256 i = 0; i < count; i++) {
-            total += _feedbacks[agentTokenId][i].score;
-        }
-
-        return (total * 100) / count;
+        ReputationData storage data = _reputationData[agentTokenId];
+        if (data.feedbackCount == 0) return 0;
+        return (data.totalScore * 100) / data.feedbackCount;
     }
 
     /**
-     * @dev Get total score for an agent
+     * @dev Get total score for an agent (O(1))
      */
     function getTotalScore(uint256 agentTokenId) public view returns (uint256) {
-        uint256 count = _feedbacks[agentTokenId].length;
-        uint256 total = 0;
-
-        for (uint256 i = 0; i < count; i++) {
-            total += _feedbacks[agentTokenId][i].score;
-        }
-
-        return total;
+        return _reputationData[agentTokenId].totalScore;
     }
 
     /**

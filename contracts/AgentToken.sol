@@ -6,6 +6,12 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
+// Interface to check agent NFT ownership
+interface IAgentNFT {
+    function ownerOf(uint256 tokenId) external view returns (address);
+    function exists(uint256 tokenId) external view returns (bool);
+}
+
 /**
  * @title AgentToken
  * @dev ERC-20 utility token for the OpenClaw Agent Platform
@@ -24,11 +30,11 @@ contract AgentToken is ERC20, ERC20Burnable, Ownable, Pausable {
     mapping(uint256 => uint256) private _agentRewards;
 
     // Agent NFT contract address (for verification)
-    address public agentNFTContract;
+    IAgentNFT public agentNFTContract;
 
     // Events
     event AgentRewarded(uint256 indexed agentTokenId, uint256 amount);
-    event RewardRatUpdated(uint256 newRate);
+    event RewardRateUpdated(uint256 newRate);
     event AgentNFTContractSet(address newContract);
 
     constructor(
@@ -52,8 +58,8 @@ contract AgentToken is ERC20, ERC20Burnable, Ownable, Pausable {
      * @param amount Amount of tokens to reward
      */
     function rewardAgent(uint256 agentTokenId, uint256 amount) public onlyOwner whenNotPaused {
-        require(agentNFTContract != address(0), "Agent NFT contract not set");
-        // In production, verify the agent exists by calling agentNFTContract.exists(agentTokenId)
+        require(address(agentNFTContract) != address(0), "Agent NFT contract not set");
+        require(agentNFTContract.exists(agentTokenId), "Agent does not exist");
 
         _agentRewards[agentTokenId] += amount;
         emit AgentRewarded(agentTokenId, amount);
@@ -67,11 +73,11 @@ contract AgentToken is ERC20, ERC20Burnable, Ownable, Pausable {
     }
 
     /**
-     * @dev Claim rewards for an agent (called by agent owner)
+     * @dev Claim rewards for an agent (must be called by NFT owner)
      */
     function claimRewards(uint256 agentTokenId) public whenNotPaused {
-        require(agentNFTContract != address(0), "Agent NFT contract not set");
-        // In production, verify msg.sender owns the agent NFT
+        require(address(agentNFTContract) != address(0), "Agent NFT contract not set");
+        require(agentNFTContract.ownerOf(agentTokenId) == msg.sender, "Not agent owner");
 
         uint256 rewards = _agentRewards[agentTokenId];
         require(rewards > 0, "No rewards to claim");
@@ -85,14 +91,14 @@ contract AgentToken is ERC20, ERC20Burnable, Ownable, Pausable {
      */
     function setRewardRate(uint256 rate) public onlyOwner {
         rewardRate = rate;
-        emit RewardRatUpdated(rate);
+        emit RewardRateUpdated(rate);
     }
 
     /**
      * @dev Set Agent NFT contract address
      */
     function setAgentNFTContract(address contractAddress) public onlyOwner {
-        agentNFTContract = contractAddress;
+        agentNFTContract = IAgentNFT(contractAddress);
         emit AgentNFTContractSet(contractAddress);
     }
 
